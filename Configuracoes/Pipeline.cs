@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.IO;
 using Amazon.Route53;
 using NLog.Extensions.Logging;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using ConsoleDominioSmart.Auxiliar;
 using ConsoleDominioSmart.Servicos;
 using ConsoleDominioSmart.Servicos.Hosted;
 using ConsoleDominioSmart.Configuracoes.AppSettings;
@@ -21,6 +22,7 @@ namespace ConsoleDominioSmart.Configuracoes
             }).ConfigureAppConfiguration((hostContext, configApp) =>
             {
                 configApp.AddJsonFile("appsettings.json", optional: false);
+                configApp.AddEnvironmentVariables();
             });
         }
 
@@ -32,13 +34,13 @@ namespace ConsoleDominioSmart.Configuracoes
             });
         }
 
-        public static void ConfigurarAmbienteAmazon(this IServiceCollection servico, Config config, IConfiguration configuracao)
+        public static void ConfigurarAmbienteAmazon(this IServiceCollection servico, Config config)
         {
-            Environment.SetEnvironmentVariable("AWS_ACCESS_KEY_ID", config.AWS.AccessKey);
-            Environment.SetEnvironmentVariable("AWS_SECRET_ACCESS_KEY", config.AWS.SecretKey);
-            Environment.SetEnvironmentVariable("AWS_REGION", config.AWS.Region);
-
-            servico.AddDefaultAWSOptions(configuracao.GetAWSOptions());
+            var awsOptions = new Amazon.Extensions.NETCore.Setup.AWSOptions
+            {
+                Region = Amazon.RegionEndpoint.GetBySystemName(config.AWS.Region)
+            };
+            servico.AddDefaultAWSOptions(awsOptions);
         }
 
         public static void ConfigurarAmazonRoute53(this IServiceCollection servico)
@@ -54,13 +56,12 @@ namespace ConsoleDominioSmart.Configuracoes
         public static void InjetarDependencias(this IServiceCollection servico, Config config)
         {
             servico.AddSingleton(config);
+            servico.AddSingleton<FilaDominioConsultar>();
             servico.AddScoped<ServicoDominio>();
 
             servico.AddHostedService<HostedServicoRegistraDominio>();
-            //servico.AddHostedService<HostedServicoExcluiDominio>();
+            servico.AddHostedService<HostedServicoExcluiDominio>();
             servico.AddHostedService<HostedServicoConsultaDominio>();
-
-            servico.AddSingleton(servico.BuildServiceProvider().CreateScope());
         }
     }
 }

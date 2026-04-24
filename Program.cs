@@ -1,4 +1,4 @@
-﻿using System.Threading.Tasks;
+using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Configuration;
 using ConsoleDominioSmart.Configuracoes;
@@ -16,7 +16,7 @@ namespace ConsoleDominioSmart
 
                 servico.ConfigurarNLog();
                 servico.ConfigurarTempoLimiteDesligamento(30);
-                servico.ConfigurarAmbienteAmazon(config, contexto.Configuration);
+                servico.ConfigurarAmbienteAmazon(config);
                 servico.ConfigurarAmazonRoute53();
                 servico.InjetarDependencias(config);
             });

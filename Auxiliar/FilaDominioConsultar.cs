@@ -1,15 +1,14 @@
-﻿using System.Collections.Generic;
+using System.Collections.Concurrent;
 using ConsoleDominioSmart.Modelos;
 
 namespace ConsoleDominioSmart.Auxiliar
 {
-    public static class FilaDominioConsultar
+    public class FilaDominioConsultar
     {
-        public static Queue<DominioConsulta> Fila = new Queue<DominioConsulta>();
+        private readonly ConcurrentQueue<DominioConsulta> _fila = new();
 
-        public static void Enfileirar(DominioConsulta dominioConsulta)
-        {
-            Fila.Enqueue(dominioConsulta);
-        }
+        public void Enfileirar(DominioConsulta dominioConsulta) => _fila.Enqueue(dominioConsulta);
+
+        public bool TryDequeue(out DominioConsulta dominioConsulta) => _fila.TryDequeue(out dominioConsulta!);
     }
 }
