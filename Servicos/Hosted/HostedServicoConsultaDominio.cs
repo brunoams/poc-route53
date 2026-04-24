@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Threading;
 using System.Threading.Tasks;
 using Amazon.Route53;
@@ -14,23 +14,23 @@ namespace ConsoleDominioSmart.Servicos.Hosted
 {
     public class HostedServicoConsultaDominio : BackgroundService, IHostedService
     {
-        private readonly IServiceScope _escopo;
+        private readonly IServiceScopeFactory _escopoFactory;
         private readonly ILogger<HostedServicoConsultaDominio> _logger;
         private readonly Config _config;
+        private readonly FilaDominioConsultar _fila;
 
-        public HostedServicoConsultaDominio(IServiceScope escopo, Config config, ILogger<HostedServicoConsultaDominio> logger)
+        public HostedServicoConsultaDominio(IServiceScopeFactory escopoFactory, Config config, ILogger<HostedServicoConsultaDominio> logger, FilaDominioConsultar fila)
         {
-            _escopo = escopo;
+            _escopoFactory = escopoFactory;
             _logger = logger;
             _config = config;
+            _fila = fila;
         }
 
         public override Task StartAsync(CancellationToken token)
         {
             _logger.LogInformation($"Serviço {nameof(HostedServicoConsultaDominio)} iniciado.");
-
             token.Register(() => _logger.LogInformation($"Serviço {nameof(HostedServicoConsultaDominio)} está parado."));
-
             return base.StartAsync(token);
         }
 
@@ -40,19 +40,16 @@ namespace ConsoleDominioSmart.Servicos.Hosted
             {
                 try
                 {
-                    using (var escopo = _escopo.CriarEscopo())
-                    {
-                        await ConsultarAsync(escopo);
-                    }
+                    using var escopo = _escopoFactory.CriarEscopo();
+                    await ConsultarAsync(escopo);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogError(ex, "Erro ao consultar status dos domínios");
                 }
-                finally
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(_config.FrequenciaSegundos));
-                }
+
+                try { await Task.Delay(TimeSpan.FromSeconds(_config.FrequenciaSegundos), token); }
+                catch (OperationCanceledException) { break; }
             }
         }
 
@@ -60,24 +57,22 @@ namespace ConsoleDominioSmart.Servicos.Hosted
         {
             var servicoRota53 = escopo.ObterServico<ServicoDominio>();
 
-            while (FilaDominioConsultar.Fila.TryDequeue(out DominioConsulta dominioConsulta))
+            while (_fila.TryDequeue(out DominioConsulta? dominioConsulta))
             {
                 try
                 {
-                    Console.WriteLine($"Consultando status do Domínio {dominioConsulta.Dominio.Url}");
+                    _logger.LogInformation($"Consultando status do domínio {dominioConsulta!.Dominio.Url}");
 
                     var resultado = await servicoRota53.ConsultarStatusAsync(dominioConsulta);
 
-                    Console.WriteLine($"Status: {resultado.Value}");
+                    _logger.LogInformation($"Status do domínio {dominioConsulta.Dominio.Url}: {resultado.Value}");
 
                     if (resultado == ChangeStatus.PENDING)
-                        FilaDominioConsultar.Enfileirar(dominioConsulta);
-
-                    Console.WriteLine();
+                        _fila.Enfileirar(dominioConsulta);
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, $"Erro ao consultar status do domínio {dominioConsulta.Dominio.Url}");
+                    _logger.LogError(ex, $"Erro ao consultar status do domínio {dominioConsulta!.Dominio.Url}");
                 }
             }
         }

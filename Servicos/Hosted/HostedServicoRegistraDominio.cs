@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -16,13 +16,13 @@ namespace ConsoleDominioSmart.Servicos.Hosted
 {
     public class HostedServicoRegistraDominio : BackgroundService, IHostedService
     {
-        private readonly IServiceScope _escopo;
+        private readonly IServiceScopeFactory _escopoFactory;
         private readonly ILogger<HostedServicoRegistraDominio> _logger;
         private readonly Config _config;
 
-        public HostedServicoRegistraDominio(IServiceScope escopo, Config config, ILogger<HostedServicoRegistraDominio> logger)
+        public HostedServicoRegistraDominio(IServiceScopeFactory escopoFactory, Config config, ILogger<HostedServicoRegistraDominio> logger)
         {
-            _escopo = escopo;
+            _escopoFactory = escopoFactory;
             _logger = logger;
             _config = config;
         }
@@ -30,9 +30,7 @@ namespace ConsoleDominioSmart.Servicos.Hosted
         public override Task StartAsync(CancellationToken token)
         {
             _logger.LogInformation($"Serviço {nameof(HostedServicoRegistraDominio)} iniciado.");
-
             token.Register(() => _logger.LogInformation($"Serviço {nameof(HostedServicoRegistraDominio)} está parado."));
-
             return base.StartAsync(token);
         }
 
@@ -42,27 +40,25 @@ namespace ConsoleDominioSmart.Servicos.Hosted
             {
                 try
                 {
-                    using (var escopo = _escopo.CriarEscopo())
-                    {
-                        await RegistrarAsync(escopo);
-                    }
+                    using var escopo = _escopoFactory.CriarEscopo();
+                    await RegistrarAsync(escopo);
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     _logger.LogError(ex, "Erro ao registrar domínios");
                 }
-                finally
-                {
-                    await Task.Delay(TimeSpan.FromSeconds(_config.FrequenciaSegundos));
-                }
+
+                try { await Task.Delay(TimeSpan.FromSeconds(_config.FrequenciaSegundos), token); }
+                catch (OperationCanceledException) { break; }
             }
         }
 
         private async Task RegistrarAsync(IServiceScope escopo)
         {
-            var conteudo = File.ReadAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Dados", "dominios-registrar.json"));
-            var dominiosRegistrar = JsonConvert.DeserializeObject<List<Dominio>>(conteudo)
-                                               .Where(p => !p.Lido);
+            var caminho = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Dados", "dominios-registrar.json");
+            var conteudo = File.ReadAllText(caminho);
+            var todosDominios = JsonConvert.DeserializeObject<List<Dominio>>(conteudo)!;
+            var dominiosRegistrar = todosDominios.Where(p => !p.Lido).ToList();
 
             if (!dominiosRegistrar.Any())
                 return;
@@ -81,7 +77,14 @@ namespace ConsoleDominioSmart.Servicos.Hosted
                 }
             }
 
-            File.WriteAllText(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Dados", "dominios-registrar.json"), JsonConvert.SerializeObject(dominiosRegistrar));
+            EscreverArquivoAtomico(caminho, JsonConvert.SerializeObject(todosDominios));
+        }
+
+        private static void EscreverArquivoAtomico(string caminho, string conteudo)
+        {
+            var caminhoTemp = caminho + ".tmp";
+            File.WriteAllText(caminhoTemp, conteudo);
+            File.Move(caminhoTemp, caminho, overwrite: true);
         }
     }
 }

@@ -1,15 +1,15 @@
-﻿using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace ConsoleDominioSmart.Auxiliar.Extensoes
 {
     public static class IServicesExtensoes
     {
-        public static IServiceScope CriarEscopo(this IServiceScope escopo)
+        public static IServiceScope CriarEscopo(this IServiceScopeFactory factory)
         {
-            return escopo.ServiceProvider.CreateScope();
+            return factory.CreateScope();
         }
 
-        public static T ObterServico<T>(this IServiceScope escopo)
+        public static T ObterServico<T>(this IServiceScope escopo) where T : notnull
         {
             return escopo.ServiceProvider.GetRequiredService<T>();
         }
